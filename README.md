@@ -6,12 +6,12 @@
 ╔══════════════════════════════════════════════════════════════════╗
 ║                                                                  ║
 ║   ┌─────┐    ╔═══════╗    ┌─────┐                                ║
-║   │Agent│───▶║ INTENT ║◀───│Agent│     Continuous                ║
+║   │Agent│───▶║ INTENT ║◀──│Agent│      Continuous                ║
 ║   └─────┘    ╚═══╤═══╝    └─────┘     Economic                   ║
 ║                  │                      Fields                   ║
 ║                  ▼                                               ║
 ║            ╔═══════════╗                                         ║
-║            ║  MATCHING  ║ ← Discovery through field intersection ║
+║            ║  MATCHING ║  ← Discovery through field intersection ║
 ║            ╚═══╤═══╤═══╝                                         ║
 ║                │   └──────┐                                      ║
 ║                ▼          ▼                                      ║
