@@ -13,6 +13,10 @@
 open Ambience_core.Types
 module Intent = Ambience_core.Intent
 module Resource = Ambience_core.Resource
+module Reputation = Ambience_trust.Reputation
+module Capability = Ambience_trust.Capability
+module Collateral = Ambience_trust.Collateral
+module Escrow = Ambience_settlement.Escrow
 
 (** Configuration for the matching engine *)
 type config = {
@@ -23,6 +27,13 @@ type config = {
   enable_multilateral: bool;     (* Enable multi-party matching *)
   max_settlement_dimensions: int; (* Limit complexity of settlement space *)
 }
+
+(** Market condition detection *)
+type market_conditions =
+  | HighLiquidity    (* Many compatible intents *)
+  | LowLiquidity     (* Few matches possible *)
+  | Volatile         (* Rapid price changes *)
+  | Stable          (* Consistent patterns *)
 
 (** Default configuration *)
 let default_config = {
@@ -42,16 +53,36 @@ type t = {
   mutable total_matches_found: int;
   mutable total_time_spent: float;
   state: Ambience_core.State.t;
+  (* Trust layer integration *)
+  reputation_mgr: Reputation.reputation_manager option;
+  capability_mgr: Capability.capability_manager option;
+  collateral_mgr: Collateral.collateral_manager option;
+  (* Settlement layer integration *)
+  escrow_mgr: Escrow.escrow_manager option;
+  (* Network propagation callback *)
+  mutable propagate_callback: (match_t -> unit) option;
+  (* Learning and adaptation *)
+  mutable match_outcomes: (uuid * bool * float) list;  (* match_id, success, utility *)
+  (* Market conditions *)
+  mutable market_conditions: market_conditions;
 }
 
 (** Create a new matching engine *)
-let create ?(config = default_config) state = {
+let create ?(config = default_config) ?reputation_mgr ?capability_mgr ?collateral_mgr
+    ?escrow_mgr state = {
   config = config;
   running = false;
   rounds_completed = 0;
   total_matches_found = 0;
   total_time_spent = 0.0;
   state = state;
+  reputation_mgr = reputation_mgr;
+  capability_mgr = capability_mgr;
+  collateral_mgr = collateral_mgr;
+  escrow_mgr = escrow_mgr;
+  propagate_callback = None;
+  match_outcomes = [];
+  market_conditions = Stable;
 }
 
 (** {2 Settlement Space Computation} *)
@@ -316,26 +347,112 @@ let find_kalai_smorodinsky_solution manifold intent_a intent_b =
 
 (** {2 Match Discovery} *)
 
-(** Calculate match quality score *)
-let calculate_match_quality intent_a intent_b manifold =
-  match manifold.optimality_scores with
-  | None -> 0.5  (* Default neutral score *)
-  | Some scores ->
-      (* Average optimality across Pareto frontier *)
-      let sum = List.fold_left (fun acc (_, s) -> acc +. s) 0.0 scores in
-      sum /. float_of_int (List.length scores)
+(** Calculate match quality with trust and history *)
+let calculate_match_quality_with_trust engine intent_a intent_b manifold =
+  (* Base quality from manifold characteristics *)
+  let base_quality =
+    match manifold.optimality_scores with
+    | None -> 0.5
+    | Some scores ->
+        let sum = List.fold_left (fun acc (_, s) -> acc +. s) 0.0 scores in
+        sum /. float_of_int (List.length scores)
+  in
 
-(** Check if two intents can match *)
-let can_match config intent_a intent_b =
+  (* Factor in reputation *)
+  let reputation_factor = match engine.reputation_mgr with
+    | None -> 0.5
+    | Some mgr ->
+        let rep_a = Reputation.get_reputation mgr intent_a.agent_id in
+        let rep_b = Reputation.get_reputation mgr intent_b.agent_id in
+        (rep_a +. rep_b) /. 2.0
+  in
+
+  (* Factor in historical success between these agents *)
+  let history_factor =
+    (* For now, use average of their reputations as proxy for history *)
+    match engine.reputation_mgr with
+    | None -> 0.5
+    | Some mgr ->
+        let rep_a = Reputation.get_reputation mgr intent_a.agent_id in
+        let rep_b = Reputation.get_reputation mgr intent_b.agent_id in
+        (* Agents with good reputation likely have good history *)
+        (rep_a +. rep_b) /. 2.0
+  in
+
+  (* Factor in settlement risk *)
+  let risk_factor =
+    let time_risk =
+      (* Longer time windows = higher risk *)
+      match Intent.get_time_windows intent_a, Intent.get_time_windows intent_b with
+      | (start_a, end_a) :: _, (start_b, end_b) :: _ ->
+          let window_a = end_a -. start_a in
+          let window_b = end_b -. start_b in
+          let max_window = max window_a window_b in
+          min 1.0 (max_window /. 86400.0)  (* Normalize to 1 day *)
+      | _ -> 0.5
+    in
+    time_risk
+  in
+
+  (* Weighted combination *)
+  base_quality *. 0.4 +.
+  reputation_factor *. 0.3 +.
+  history_factor *. 0.2 +.
+  (1.0 -. risk_factor) *. 0.1
+
+(** Legacy calculate_match_quality *)
+let calculate_match_quality intent_a intent_b manifold =
+  let engine = create (Ambience_core.State.create ()) in
+  calculate_match_quality_with_trust engine intent_a intent_b manifold
+
+(** Check if two intents can match with trust integration *)
+let can_match_with_trust engine intent_a intent_b =
   (* Quick compatibility check *)
   if not (Intent.are_compatible intent_a intent_b) then
     false
   else
-    (* Check counterparty requirements *)
-    let rep_a = 0.5 in  (* TODO: Get actual reputation *)
-    let rep_b = 0.5 in
-    Intent.meets_counterparty_requirements intent_a intent_b.agent_id rep_b &&
-    Intent.meets_counterparty_requirements intent_b intent_a.agent_id rep_a
+    (* Check capabilities if available *)
+    let capability_ok = match engine.capability_mgr with
+      | None -> true  (* No capability check if not configured *)
+      | Some mgr ->
+          Ambience_trust.Capability.can_trade mgr intent_a.agent_id intent_a.offer_field.resource_type &&
+          Ambience_trust.Capability.can_trade mgr intent_b.agent_id intent_b.offer_field.resource_type
+    in
+
+    if not capability_ok then false
+    else
+      (* Check reputation requirements *)
+      let (rep_a, rep_b) = match engine.reputation_mgr with
+        | None -> (0.5, 0.5)  (* Default reputation if not configured *)
+        | Some mgr ->
+            (Ambience_trust.Reputation.get_reputation mgr intent_a.agent_id,
+             Ambience_trust.Reputation.get_reputation mgr intent_b.agent_id)
+      in
+
+      (* Check collateral sufficiency *)
+      let collateral_ok = match engine.collateral_mgr with
+        | None -> true
+        | Some mgr ->
+            let max_value = intent_a.offer_field.quantity_range |> snd in
+            let required = Ambience_trust.Collateral.calculate_required mgr max_value rep_a
+              (Ambience_trust.Collateral.Percentage 0.1) in
+            Ambience_trust.Collateral.has_sufficient_collateral mgr intent_a.agent_id required &&
+            let required_b = Ambience_trust.Collateral.calculate_required mgr max_value rep_b
+              (Ambience_trust.Collateral.Percentage 0.1) in
+            Ambience_trust.Collateral.has_sufficient_collateral mgr intent_b.agent_id required_b
+      in
+
+      if not collateral_ok then false
+      else
+        (* Check counterparty requirements with actual reputation *)
+        Intent.meets_counterparty_requirements intent_a intent_b.agent_id rep_b &&
+        Intent.meets_counterparty_requirements intent_b intent_a.agent_id rep_a
+
+(** Legacy can_match for backwards compatibility *)
+let can_match config intent_a intent_b =
+  (* Create temporary engine with no trust components *)
+  let engine = create ~config (Ambience_core.State.create ()) in
+  can_match_with_trust engine intent_a intent_b
 
 (** Discover bilateral matches *)
 let discover_bilateral_matches config intents =
@@ -378,6 +495,84 @@ let discover_multilateral_matches _config _intents =
   (* Example: A offers X wants Y, B offers Y wants Z, C offers Z wants X *)
   []
 
+(** {2 Market Adaptation} *)
+
+(** Detect current market conditions *)
+let detect_market_conditions engine intents matches =
+  let intent_count = List.length intents in
+  let match_count = List.length matches in
+  let match_rate = if intent_count > 0 then
+    float_of_int match_count /. float_of_int intent_count
+  else 0.0 in
+
+  (* Calculate price volatility from recent matches *)
+  let price_volatility =
+    if List.length matches < 2 then 0.0
+    else
+      let prices = List.filter_map (fun m ->
+        match m.settlement_space.pareto_frontier with
+        | [] -> None
+        | points -> Some (List.hd points).price
+      ) matches in
+      if List.length prices < 2 then 0.0
+      else
+        let avg = List.fold_left (+.) 0.0 prices /. float_of_int (List.length prices) in
+        let variance = List.fold_left (fun acc p ->
+          acc +. (p -. avg) ** 2.0
+        ) 0.0 prices /. float_of_int (List.length prices) in
+        sqrt variance /. avg  (* Coefficient of variation *)
+  in
+
+  (* Determine conditions based on metrics *)
+  match match_rate, price_volatility with
+  | rate, _ when rate > 0.5 -> HighLiquidity
+  | rate, _ when rate < 0.1 -> LowLiquidity
+  | _, vol when vol > 0.3 -> Volatile
+  | _ -> Stable
+
+(** Adapt matching strategy to market conditions *)
+let adapt_to_market_conditions engine conditions =
+  match conditions with
+  | HighLiquidity ->
+      (* Many matches available - be more selective *)
+      engine.config <- { engine.config with
+        min_match_quality = min 0.8 (engine.config.min_match_quality *. 1.2);
+        matching_interval = 1.0;  (* Can afford slower matching *)
+      }
+  | LowLiquidity ->
+      (* Few matches - be less selective and enable multilateral *)
+      engine.config <- { engine.config with
+        min_match_quality = max 0.3 (engine.config.min_match_quality *. 0.8);
+        enable_multilateral = true;
+        matching_interval = 0.5;  (* Match more frequently *)
+      }
+  | Volatile ->
+      (* Prices changing rapidly - match quickly *)
+      engine.config <- { engine.config with
+        matching_interval = 0.1;  (* Very fast matching *)
+        pareto_samples = 50;  (* Lower resolution for speed *)
+      }
+  | Stable ->
+      (* Normal conditions *)
+      engine.config <- { engine.config with
+        min_match_quality = 0.5;
+        matching_interval = 1.0;
+        pareto_samples = 100;
+      }
+
+(** Propagate high-quality matches via callback *)
+let propagate_matches engine matches =
+  match engine.propagate_callback with
+  | None -> ()
+  | Some callback ->
+      matches
+      |> List.filter (fun m -> m.quality > 0.7)  (* Only propagate high-quality matches *)
+      |> List.iter callback
+
+(** Set match propagation callback *)
+let set_propagate_callback engine callback =
+  engine.propagate_callback <- Some callback
+
 (** Run one matching round *)
 let run_matching_round engine =
   let start_time = Ambience_core.Time_provider.now () in
@@ -415,7 +610,17 @@ let run_matching_round engine =
   let elapsed = Ambience_core.Time_provider.now () -. start_time in
   engine.total_time_spent <- engine.total_time_spent +. elapsed;
   engine.rounds_completed <- engine.rounds_completed + 1;
-  
+
+  (* Propagate high-quality matches through gossip network *)
+  propagate_matches engine all_matches;
+
+  (* Detect and adapt to market conditions *)
+  let conditions = detect_market_conditions engine intents all_matches in
+  if conditions <> engine.market_conditions then begin
+    engine.market_conditions <- conditions;
+    adapt_to_market_conditions engine conditions
+  end;
+
   all_matches
 
 (** {2 Engine Control} *)
