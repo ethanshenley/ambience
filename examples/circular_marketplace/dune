@@ -1,0 +1,11 @@
+(executable
+ (name main)
+ (libraries
+  ambience.core
+  ambience.matching
+  ambience.trust
+  ambience.settlement
+  ambience.network
+  unix
+  threads)
+ (flags (:standard -w -A)))

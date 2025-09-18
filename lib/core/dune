@@ -1,6 +1,6 @@
 (library
  (name ambience_core)
  (public_name ambience.core)
- (modules types time_provider intent resource state)
+ (modules types time_provider intent resource state registry)
  (libraries yojson unix threads)
  (preprocess (pps ppx_deriving_yojson)))

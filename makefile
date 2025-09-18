@@ -34,6 +34,12 @@ run-grid:
 run-smart-meter:
 	dune exec examples/energy_trading/main.exe -- smart-meter house_001
 
+# Run circular marketplace example (NEW!)
+run-circular-marketplace:
+	dune exec examples/circular_marketplace/main.exe
+
+demo: run-circular-marketplace
+
 # CLI commands
 cli-post:
 	dune exec bin/cli.exe -- post -o compute:gpu:nvidia:4090 -w currency:fiat:USD -q 1.0 -p 5.0

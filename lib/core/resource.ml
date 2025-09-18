@@ -144,17 +144,23 @@ module Ontology = struct
     List.exists (fun a -> List.mem a ancestors2) ancestors1
 end
 
-(** Initialize the resource ontology on module load *)
-let () = Ontology.init ()
+(** Global registry instance *)
+let global_registry = Registry.create ()
 
-(** Validate a resource URI *)
+(** Initialize with common resources *)
+let () = Registry.seed_common_resources global_registry
+
+(** Get the global registry *)
+let get_registry () = global_registry
+
+(** Validate a resource URI - now just checks if it's non-empty *)
 let validate_uri uri =
-  if Ontology.exists uri then
+  if String.length uri > 0 then
     Ok ()
   else
-    Error (Printf.sprintf "Unknown resource type: %s" uri)
+    Error "Resource URI cannot be empty"
 
-(** Create a resource field with validation *)
+(** Create a resource field - now permissive *)
 let create_field ~resource_type ~min_quantity ~max_quantity ~quality ~metadata =
   (* Validate URI *)
   match validate_uri resource_type with
@@ -166,16 +172,20 @@ let create_field ~resource_type ~min_quantity ~max_quantity ~quality ~metadata =
     else if max_quantity < min_quantity then
       Error "Maximum quantity must be >= minimum quantity"
     else
-      (* Validate quality based on resource type *)
-      match Ontology.get_metadata resource_type with
-      | None -> Error "Resource type not found"
-      | Some node ->
-          match quality with
-          | Fungible when not node.fungible ->
-              Error (Printf.sprintf "%s is not a fungible resource" node.name)
-          | Graded score when score < 0.0 || score > 1.0 ->
-              Error "Quality score must be between 0.0 and 1.0"
-          | _ ->
+      (* Auto-discover new resource types *)
+      let () = if not (Registry.exists global_registry resource_type) then
+        Registry.discover global_registry
+          ~uri:resource_type
+          ~agent_id:"system"
+          ~description:"Auto-discovered resource"
+          ()
+      in
+
+      (* Accept any quality specification *)
+      match quality with
+      | Graded score when score < 0.0 || score > 1.0 ->
+          Error "Quality score must be between 0.0 and 1.0"
+      | _ ->
               Ok {
                 resource_type = resource_type;
                 quantity_range = (min_quantity, max_quantity);
