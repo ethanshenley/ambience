@@ -11,7 +11,7 @@
 *)
 
 open Ambience_core.Types
-open Ambience_core.Intent
+module Intent = Ambience_core.Intent
 module Resource = Ambience_core.Resource
 
 (** Configuration for the matching engine *)
@@ -59,8 +59,8 @@ let create ?(config = default_config) state = {
 (** Compute the valid price range for a match *)
 let compute_price_range intent_a intent_b =
   (* Get price constraints from both intents *)
-  let prices_a = get_price_ranges intent_a in
-  let prices_b = get_price_ranges intent_b in
+  let prices_a = Intent.get_price_ranges intent_a in
+  let prices_b = Intent.get_price_ranges intent_b in
   
   (* If no price constraints, use quantity ratio *)
   match prices_a, prices_b with
@@ -96,8 +96,8 @@ let compute_quantity_range intent_a intent_b =
 
 (** Compute the valid time window for execution *)
 let compute_time_window intent_a intent_b =
-  let windows_a = get_time_windows intent_a in
-  let windows_b = get_time_windows intent_b in
+  let windows_a = Intent.get_time_windows intent_a in
+  let windows_b = Intent.get_time_windows intent_b in
   
   let current_time = Ambience_core.Time_provider.now () in
   
@@ -146,7 +146,7 @@ let calculate_utility intent point =
   
   (* Price utility - closer to preferred price is better *)
   let price_utility = 
-    match get_price_ranges intent with
+    match Intent.get_price_ranges intent with
     | [] -> 1.0  (* No preference *)
     | (min_p, max_p) :: _ ->
         if point.price < min_p then 0.0
@@ -240,6 +240,80 @@ let compute_settlement_manifold config intent_a intent_b =
         optimality_scores = Some optimality_scores;
       }
 
+(** Find Nash bargaining solution in settlement manifold *)
+let find_nash_solution manifold intent_a intent_b =
+  match manifold.optimality_scores with
+  | None -> None
+  | Some scores ->
+      (* Calculate reservation utilities (disagreement points) *)
+      (* These are the utilities if no agreement is reached *)
+      let reservation_a = 0.0 in  (* No trade utility *)
+      let reservation_b = 0.0 in
+
+      (* Find point maximizing Nash product *)
+      let nash_point =
+        List.fold_left (fun best (point, _score) ->
+          let utility_a = calculate_utility intent_a point in
+          let utility_b = calculate_utility intent_b point in
+
+          (* Nash product: (u_a - d_a) * (u_b - d_b) *)
+          let surplus_a = max 0.0 (utility_a -. reservation_a) in
+          let surplus_b = max 0.0 (utility_b -. reservation_b) in
+          let nash_product = surplus_a *. surplus_b in
+
+          match best with
+          | None -> Some (point, nash_product)
+          | Some (_, best_product) ->
+              if nash_product > best_product then
+                Some (point, nash_product)
+              else
+                best
+        ) None scores
+      in
+
+      Option.map fst nash_point
+
+(** Find Kalai-Smorodinsky solution in settlement manifold *)
+let find_kalai_smorodinsky_solution manifold intent_a intent_b =
+  match manifold.optimality_scores with
+  | None -> None
+  | Some scores ->
+      (* Find ideal utilities for each agent *)
+      let ideal_a =
+        List.fold_left (fun acc (point, _) ->
+          max acc (calculate_utility intent_a point)
+        ) 0.0 scores
+      in
+
+      let ideal_b =
+        List.fold_left (fun acc (point, _) ->
+          max acc (calculate_utility intent_b point)
+        ) 0.0 scores
+      in
+
+      (* Find point maintaining proportional utilities *)
+      let ks_point =
+        List.fold_left (fun best (point, _) ->
+          let utility_a = calculate_utility intent_a point in
+          let utility_b = calculate_utility intent_b point in
+
+          (* Check if utilities are proportional to ideal utilities *)
+          let ratio_a = if ideal_a > 0.0 then utility_a /. ideal_a else 0.0 in
+          let ratio_b = if ideal_b > 0.0 then utility_b /. ideal_b else 0.0 in
+          let ratio_diff = abs_float (ratio_a -. ratio_b) in
+
+          match best with
+          | None -> Some (point, ratio_diff)
+          | Some (_, best_diff) ->
+              if ratio_diff < best_diff then
+                Some (point, ratio_diff)
+              else
+                best
+        ) None scores
+      in
+
+      Option.map fst ks_point
+
 (** {2 Match Discovery} *)
 
 (** Calculate match quality score *)
@@ -254,26 +328,26 @@ let calculate_match_quality intent_a intent_b manifold =
 (** Check if two intents can match *)
 let can_match config intent_a intent_b =
   (* Quick compatibility check *)
-  if not (are_compatible intent_a intent_b) then
+  if not (Intent.are_compatible intent_a intent_b) then
     false
   else
     (* Check counterparty requirements *)
     let rep_a = 0.5 in  (* TODO: Get actual reputation *)
     let rep_b = 0.5 in
-    meets_counterparty_requirements intent_a intent_b.agent_id rep_b &&
-    meets_counterparty_requirements intent_b intent_a.agent_id rep_a
+    Intent.meets_counterparty_requirements intent_a intent_b.agent_id rep_b &&
+    Intent.meets_counterparty_requirements intent_b intent_a.agent_id rep_a
 
 (** Discover bilateral matches *)
 let discover_bilateral_matches config intents =
   (* Group intents by resource for efficiency *)
-  let by_resource = Batch.group_by_resource intents in
+  let by_resource = Intent.Batch.group_by_resource intents in
   
   let matches = ref [] in
   
   (* For each resource type, find matches *)
   Hashtbl.iter (fun _resource_type intent_list ->
     (* Find all compatible pairs *)
-    let pairs = Batch.find_compatible_pairs intent_list in
+    let pairs = Intent.Batch.find_compatible_pairs intent_list in
     
     (* For each pair, try to create a match *)
     List.iter (fun (intent_a, intent_b) ->
@@ -285,7 +359,7 @@ let discover_bilateral_matches config intents =
             
             if quality >= config.min_match_quality then
               let match_t = {
-                match_id = generate_uuid ();
+                match_id = Intent.generate_uuid ();
                 intent_ids = [intent_a.intent_id; intent_b.intent_id];
                 settlement_space = manifold;
                 discovered_at = Ambience_core.Time_provider.now ();
@@ -311,7 +385,7 @@ let run_matching_round engine =
   (* Get active intents *)
   let intents = 
     Ambience_core.State.Queries.get_active_intents engine.state
-    |> Batch.sort_by_priority
+    |> Intent.Batch.sort_by_priority
     |> fun list ->
         (* Limit number of intents per round *)
         let len = min (List.length list) engine.config.max_intents_per_round in

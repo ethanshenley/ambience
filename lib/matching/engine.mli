@@ -86,6 +86,14 @@ type stats = {
 val get_stats : t -> stats
 (** Get engine statistics *)
 
+(** {1 Settlement Solutions} *)
+
+val find_nash_solution : settlement_manifold -> intent -> intent -> settlement_point option
+(** Find Nash bargaining solution that maximizes the product of surplus utilities *)
+
+val find_kalai_smorodinsky_solution : settlement_manifold -> intent -> intent -> settlement_point option
+(** Find Kalai-Smorodinsky solution that maintains proportional utilities *)
+
 (** {1 Match Ranking and Filtering} *)
 
 val rank_matches : match_t list -> match_t list

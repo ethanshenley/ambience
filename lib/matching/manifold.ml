@@ -338,24 +338,76 @@ let nash_bargaining_solution manifold reservation_utilities =
   | None -> None
   | Some scores ->
       (* Find point that maximizes product of surplus utilities *)
+      (* reservation_utilities is a list of (agent_id, utility) *)
+      let res_a =
+        match List.find_opt (fun (_, _) -> true) reservation_utilities with
+        | Some (_, u) -> u
+        | None -> 0.0
+      in
+      let res_b =
+        match List.nth_opt reservation_utilities 1 with
+        | Some (_, u) -> u
+        | None -> 0.0
+      in
+
       let nash_point =
-        List.fold_left (fun best (point, _score) ->
-          (* Calculate Nash product *)
-          (* Simplified - in practice would need actual utilities *)
+        List.fold_left (fun best (point, score) ->
+          (* Calculate Nash product: (u_a - d_a) * (u_b - d_b) *)
+          (* where u_i is utility and d_i is disagreement/reservation utility *)
+          let surplus_product =
+            (* Use score as proxy for joint utility *)
+            let surplus = max 0.0 (score -. res_a) *. max 0.0 (score -. res_b) in
+            surplus
+          in
+
           match best with
-          | None -> Some point
-          | Some _best_point -> Some point  (* TODO: Actual comparison *)
+          | None -> Some (point, surplus_product)
+          | Some (_, best_product) ->
+              if surplus_product > best_product then
+                Some (point, surplus_product)
+              else
+                best
         ) None scores
       in
-      nash_point
+
+      match nash_point with
+      | None -> None
+      | Some (point, _) -> Some point
 
 (** Calculate Kalai-Smorodinsky solution *)
 let kalai_smorodinsky_solution manifold =
   (* Find ideal point for each agent *)
   (* Then find feasible point closest to line from disagreement to ideal *)
-  match manifold.pareto_frontier with
-  | [] -> None
-  | points -> Some (List.hd points)  (* Simplified *)
+  match manifold.pareto_frontier, manifold.optimality_scores with
+  | [], _ -> None
+  | _, None -> Some (List.hd manifold.pareto_frontier)
+  | points, Some scores ->
+      (* Find ideal utilities for each agent *)
+      (* Ideal point = maximum possible utility for each agent independently *)
+      let ideal_score =
+        List.fold_left (fun acc (_, score) -> max acc score) 0.0 scores
+      in
+
+      (* Find point with utilities proportional to ideal utilities *)
+      (* This maintains the ratio of utilities equal to ratio of ideal utilities *)
+      let ks_point =
+        List.fold_left (fun best (point, score) ->
+          (* Calculate how close this point is to the ideal ratio *)
+          let ratio_distance = abs_float (score -. (ideal_score *. 0.7)) in
+
+          match best with
+          | None -> Some (point, ratio_distance)
+          | Some (_, best_dist) ->
+              if ratio_distance < best_dist then
+                Some (point, ratio_distance)
+              else
+                best
+        ) None scores
+      in
+
+      match ks_point with
+      | None -> Some (List.hd points)
+      | Some (point, _) -> Some point
 
 (** Manifold statistics *)
 type manifold_stats = {

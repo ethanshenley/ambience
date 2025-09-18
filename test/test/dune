@@ -41,3 +41,17 @@
  (modules test_simple)
  (libraries alcotest)
  (flags (:standard -w -A)))
+
+(executable
+ (name test_matching_engine)
+ (modules test_matching_engine)
+ (libraries
+  ambience.core
+  ambience.matching
+  alcotest
+  unix)
+ (flags (:standard -w -A)))
+
+(rule
+ (alias runtest)
+ (action (run ./test_matching_engine.exe)))

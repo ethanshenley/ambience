@@ -80,9 +80,17 @@ module Ontology = struct
     (* Network subtypes *)
     add_resource "network:bandwidth" "Bandwidth" "Network bandwidth" 
       (Some "network") true "Mbps" [];
-    add_resource "network:egress" "Egress" "Outbound data transfer" 
-      (Some "network") true "GB" []
-      
+    add_resource "network:egress" "Egress" "Outbound data transfer"
+      (Some "network") true "GB" [];
+
+    (* Test currencies for testing *)
+    for i = 0 to 9 do
+      let currency_id = Printf.sprintf "currency:test%d" i in
+      let name = Printf.sprintf "Test Currency %d" i in
+      let description = Printf.sprintf "Test currency for unit tests %d" i in
+      add_resource currency_id name description (Some "currency") true "TST" []
+    done
+
   (** Check if a resource type exists *)
   let exists uri = Hashtbl.mem ontology_tree uri
   
