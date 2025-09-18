@@ -25,13 +25,9 @@
 ## What is ACP?
 
 The Ambient Commerce Protocol is economic infrastructure for autonomous agents. Unlike traditional commerce systems designed for human interaction, ACP treats economic activity as **continuous fields** rather than discrete events.
+ We see **Agent Commerce** as an optimization problem for intent matching. The faster we can compute an event chain: Emit intent field → Continuous matching → Crystallize settlement, the more commerce can occur. 
 
-### Core Philosophy
-
-**Human Commerce**: Place order → Execute → Done
-**Agent Commerce**: Emit intent field → Continuous matching → Crystallize settlement
-
-Agents don't "shop" - they emit persistent economic fields that automatically intersect with compatible fields, discovering trades through mathematical optimization rather than active search.
+So agents don't really "shop" - they emit persistent economic fields that automatically intersect with compatible fields, discovering trades through mathematical optimization rather than active search.
 
 ## Quick Start
 
@@ -62,7 +58,7 @@ dune test
 ## Key Features
 
 ### 🌐 Dynamic Resource Registry
-Any economic value can be tokenized and traded - from traditional currencies to quantum computing time to social media followers. The protocol doesn't define what has value; agents do.
+Any economic value can be tokenized and traded. The protocol doesn't define what has value; agents do.
 
 ```ocaml
 (* Traditional resources *)
@@ -81,7 +77,7 @@ Automatically discovers circular economies where no bilateral trades exist:
 ```
 Alice: Offers GPU → Wants USD
 Bob:   Offers USD → Wants ETH
-Charlie: Offers ETH → Wants GPU
+Charlie: Offers ETH → Wants GPU Compute
 
 Result: Circular trade (Alice→Charlie→Bob→Alice) discovered automatically
 ```
@@ -261,7 +257,7 @@ Current implementation: **~90% complete**
 
 ## Contributing
 
-We welcome contributions! Areas of particular interest:
+There is much to do and I welcome contributions! Areas of particular interest:
 
 1. **Novel resource types** - Create examples with unique economic value
 2. **Matching algorithms** - Optimize discovery for specific domains
