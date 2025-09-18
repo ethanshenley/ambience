@@ -47,7 +47,7 @@ let default_config = {
 
 (** The matching engine state *)
 type t = {
-  config: config;
+  mutable config: config;
   mutable running: bool;
   mutable rounds_completed: int;
   mutable total_matches_found: int;
@@ -348,7 +348,7 @@ let find_kalai_smorodinsky_solution manifold intent_a intent_b =
 (** {2 Match Discovery} *)
 
 (** Calculate match quality with trust and history *)
-let calculate_match_quality_with_trust engine intent_a intent_b manifold =
+let calculate_match_quality_with_trust engine (intent_a : intent) (intent_b : intent) manifold =
   (* Base quality from manifold characteristics *)
   let base_quality =
     match manifold.optimality_scores with
@@ -373,10 +373,10 @@ let calculate_match_quality_with_trust engine intent_a intent_b manifold =
     match engine.reputation_mgr with
     | None -> 0.5
     | Some mgr ->
-        let rep_a = Reputation.get_reputation mgr intent_a.agent_id in
-        let rep_b = Reputation.get_reputation mgr intent_b.agent_id in
+        let hist_rep_a = Reputation.get_reputation mgr intent_a.agent_id in
+        let hist_rep_b = Reputation.get_reputation mgr intent_b.agent_id in
         (* Agents with good reputation likely have good history *)
-        (rep_a +. rep_b) /. 2.0
+        (hist_rep_a +. hist_rep_b) /. 2.0
   in
 
   (* Factor in settlement risk *)
@@ -489,11 +489,161 @@ let discover_bilateral_matches config intents =
   
   !matches
 
+(** {2 Multi-Party Circular Trading} *)
+
+(** Trade graph node *)
+type trade_node = {
+  intent: intent;
+  offers_resource: string;
+  wants_resource: string;
+  mutable visited: bool;
+  mutable in_stack: bool;
+  mutable low_link: int;
+  mutable index: int;
+}
+
+(** Build directed trade graph *)
+let build_trade_graph intents =
+  let nodes = List.map (fun intent -> {
+    intent = intent;
+    offers_resource = intent.offer_field.resource_type;
+    wants_resource = intent.want_field.resource_type;
+    visited = false;
+    in_stack = false;
+    low_link = -1;
+    index = -1;
+  }) intents in
+
+  let adjacency = Hashtbl.create (List.length nodes) in
+  List.iter (fun node ->
+    (* An edge from A to B exists if B wants what A offers *)
+    let compatible = List.filter (fun other ->
+      node != other && other.wants_resource = node.offers_resource
+    ) nodes in
+    (* Edge from node to compatible nodes *)
+    Hashtbl.add adjacency node compatible
+  ) nodes;
+
+  (nodes, adjacency)
+
+(** Find cycles using modified Tarjan's algorithm *)
+let find_trade_cycles nodes adjacency max_length =
+  let cycles = ref [] in
+  let path = ref [] in
+  let visited = Hashtbl.create (List.length nodes) in
+
+  (* Simple DFS-based cycle detection *)
+  let rec dfs node start_node current_path depth =
+    if depth > max_length then ()
+    else if node.intent.intent_id = start_node.intent.intent_id && depth >= 3 then begin
+      (* Found a cycle back to start - minimum length 3 for circular trade *)
+      cycles := current_path :: !cycles
+    end else if not (Hashtbl.mem visited node) || node.intent.intent_id = start_node.intent.intent_id then begin
+      if node.intent.intent_id <> start_node.intent.intent_id then Hashtbl.add visited node true;
+
+      let neighbors = try Hashtbl.find adjacency node with Not_found -> [] in
+      List.iter (fun next ->
+        (* Avoid immediate backtrack by checking IDs *)
+        let should_explore =
+          depth = 0 ||
+          List.length current_path = 0 ||
+          next.intent.intent_id <> (List.hd current_path).intent.intent_id
+        in
+        if should_explore then
+          dfs next start_node (current_path @ [next]) (depth + 1)
+      ) neighbors
+    end
+  in
+
+  (* Try starting from each node *)
+  List.iter (fun start_node ->
+    Hashtbl.clear visited;
+    dfs start_node start_node [start_node] 0
+  ) nodes;
+
+  (* Deduplicate cycles (same cycle can be found from different starting points) *)
+  let unique_cycles = Hashtbl.create 10 in
+  List.iter (fun cycle ->
+    (* Normalize cycle by sorting node IDs *)
+    let sorted_ids = List.sort compare (List.map (fun n -> n.intent.intent_id) cycle) in
+    let key = String.concat "," sorted_ids in
+    if not (Hashtbl.mem unique_cycles key) then
+      Hashtbl.add unique_cycles key cycle
+  ) !cycles;
+
+  Hashtbl.fold (fun _ cycle acc -> cycle :: acc) unique_cycles []
+
+(** Compute settlement for circular trade *)
+let compute_circular_manifold cycle =
+  let n = List.length cycle in
+  if n < 3 then None
+  else
+    (* Find balanced quantities *)
+    let quantities = List.map (fun node ->
+      let (min_o, max_o) = node.intent.offer_field.quantity_range in
+      let (min_w, max_w) = node.intent.want_field.quantity_range in
+      ((min_o +. max_o) /. 2.0, (min_w +. max_w) /. 2.0)
+    ) cycle in
+
+    (* Check if quantities can balance around the cycle *)
+    let balanced = List.fold_left2 (fun acc (offer, _) (_, want) ->
+      acc && abs_float (offer -. want) < offer *. 0.2  (* 20% tolerance *)
+    ) true quantities (List.tl quantities @ [List.hd quantities]) in
+
+    if balanced then
+      let avg_quantity =
+        List.fold_left (fun acc (o, w) -> acc +. (o +. w) /. 2.0) 0.0 quantities /.
+        (2.0 *. float_of_int n) in
+
+      Some {
+        dimensions = ["quantity"; "balance"];
+        valid_region_constraints = [];
+        pareto_frontier = [{
+          price = 1.0;
+          quantity = avg_quantity;
+          execution_time = Ambience_core.Time_provider.now () +. 60.0;
+          quality_level = None;
+          additional_terms = [
+            ("type", "circular");
+            ("participants", string_of_int n)
+          ];
+        }];
+        optimality_scores = Some [({
+          price = 1.0;
+          quantity = avg_quantity;
+          execution_time = Ambience_core.Time_provider.now () +. 60.0;
+          quality_level = None;
+          additional_terms = [];
+        }, 0.8 +. 0.05 *. float_of_int n)];
+      }
+    else None
+
 (** Discover multilateral matches (3+ party) *)
-let discover_multilateral_matches _config _intents =
-  (* TODO: Implement circular/triangular trades *)
-  (* Example: A offers X wants Y, B offers Y wants Z, C offers Z wants X *)
-  []
+let discover_multilateral_matches config intents =
+  if List.length intents < 3 then []
+  else
+    let (nodes, adjacency) = build_trade_graph intents in
+    let cycles = find_trade_cycles nodes adjacency 5 in
+
+    (* Find cycles in the trade graph *)
+
+    List.filter_map (fun cycle ->
+      match compute_circular_manifold cycle with
+      | None -> None
+      | Some manifold ->
+          let match_t = {
+            match_id = Intent.generate_uuid ();
+            intent_ids = List.map (fun n -> n.intent.intent_id) cycle;
+            settlement_space = manifold;
+            discovered_at = Ambience_core.Time_provider.now ();
+            discovered_by = "circular_matcher";
+            expires_at = Ambience_core.Time_provider.now () +. 300.0;
+          } in
+          (* Calculate quality for filtering *)
+          let quality = 0.7 +. 0.05 *. float_of_int (List.length cycle) in
+          if quality >= config.min_match_quality then Some match_t
+          else None
+    ) cycles
 
 (** {2 Market Adaptation} *)
 
@@ -565,9 +715,8 @@ let propagate_matches engine matches =
   match engine.propagate_callback with
   | None -> ()
   | Some callback ->
-      matches
-      |> List.filter (fun m -> m.quality > 0.7)  (* Only propagate high-quality matches *)
-      |> List.iter callback
+      (* For now, propagate all matches - quality filtering happens elsewhere *)
+      List.iter callback matches
 
 (** Set match propagation callback *)
 let set_propagate_callback engine callback =

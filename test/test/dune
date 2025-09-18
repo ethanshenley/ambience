@@ -55,3 +55,18 @@
 (rule
  (alias runtest)
  (action (run ./test_matching_engine.exe)))
+
+(executable
+ (name test_circular_trades)
+ (modules test_circular_trades)
+ (modes byte exe)
+ (libraries
+  ambience.core
+  ambience.matching
+  alcotest
+  unix)
+ (flags (:standard -w -A)))
+
+(rule
+ (alias runtest)
+ (action (run ./test_circular_trades.exe)))

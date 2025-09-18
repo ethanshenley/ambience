@@ -26,8 +26,14 @@ val default_config : config
 type t
 (** The matching engine *)
 
-val create : ?config:config -> Ambience_core.State.t -> t
-(** Create a new matching engine with optional configuration *)
+val create :
+  ?config:config ->
+  ?reputation_mgr:Ambience_trust.Reputation.reputation_manager ->
+  ?capability_mgr:Ambience_trust.Capability.capability_manager ->
+  ?collateral_mgr:Ambience_trust.Collateral.collateral_manager ->
+  ?escrow_mgr:Ambience_settlement.Escrow.escrow_manager ->
+  Ambience_core.State.t -> t
+(** Create a new matching engine with optional configuration and trust managers *)
 
 (** {1 Settlement Space Computation} *)
 

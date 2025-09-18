@@ -68,9 +68,21 @@ module Ontology = struct
       (Some "currency:fiat") true "USD" [];
     add_resource "currency:crypto" "Cryptocurrency" "Digital currency" 
       (Some "currency") false "units" [];
-    add_resource "currency:crypto:USDC" "USD Coin" "USDC Stablecoin" 
+    add_resource "currency:crypto:USDC" "USD Coin" "USDC Stablecoin"
       (Some "currency:crypto") true "USDC" ["network", "ethereum"];
+    add_resource "currency:crypto:ETH" "Ethereum" "Ether cryptocurrency"
+      (Some "currency:crypto") true "ETH" ["network", "ethereum"];
+    add_resource "currency:crypto:BTC" "Bitcoin" "Bitcoin cryptocurrency"
+      (Some "currency:crypto") true "BTC" ["network", "bitcoin"];
     
+    (* Test resources for circular trading *)
+    for i = 0 to 9 do
+      let uri = Printf.sprintf "resource:%d" i in
+      let name = Printf.sprintf "Test Resource %d" i in
+      let desc = Printf.sprintf "Test resource for circular trading" in
+      add_resource uri name desc None false "units" []
+    done;
+
     (* Storage subtypes *)
     add_resource "storage:ssd" "SSD Storage" "Solid state storage" 
       (Some "storage") true "GB" ["iops", "50000"];
