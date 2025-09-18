@@ -1,0 +1,6 @@
+(library
+ (name ambience_settlement)
+ (public_name ambience.settlement)
+ (modules escrow executor proof reversal)
+ (libraries ambience.core unix)
+ (preprocess (pps ppx_deriving_yojson)))

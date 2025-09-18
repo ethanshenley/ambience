@@ -1,0 +1,42 @@
+(library
+ (name test_helpers)
+ (modules test_helpers)
+ (libraries
+  ambience.core
+  ambience.matching
+  ambience.settlement
+  alcotest
+  yojson)
+ (flags (:standard -w -A)))
+
+(library
+ (name fixtures)
+ (modules
+  intent_fixtures
+  match_fixtures
+  agent_fixtures)
+ (libraries
+  ambience.core
+  test_helpers)
+ (flags (:standard -w -A)))
+
+(executable
+ (name test_all)
+ (modules test_all test_core_types test_intent)
+ (libraries
+  ambience.core
+  test_helpers
+  fixtures
+  alcotest)
+ (flags (:standard -w -A))
+ (preprocess (pps ppx_deriving_yojson)))
+
+(rule
+ (alias runtest)
+ (action (run ./test_all.exe)))
+
+(test
+ (name test_simple)
+ (modules test_simple)
+ (libraries alcotest)
+ (flags (:standard -w -A)))

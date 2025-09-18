@@ -1,0 +1,6 @@
+(library
+ (name ambience_matching)
+ (public_name ambience.matching)
+ (modules engine discovery manifold negotiation)
+ (libraries ambience.core unix)
+ (preprocess (pps ppx_deriving_yojson)))

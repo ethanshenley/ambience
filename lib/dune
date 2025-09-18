@@ -1,0 +1,13 @@
+(library
+ (name ambient)
+ (public_name ambience)
+ (modules ambient)
+ (libraries
+   ambience.core
+   ambience.matching
+   ambience.network
+   ambience.settlement
+   ambience.trust
+   unix
+   threads
+   yojson))

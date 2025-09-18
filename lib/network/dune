@@ -1,0 +1,6 @@
+(library
+ (name ambience_network)
+ (public_name ambience.network)
+ (modules transport protocol peer gossip)
+ (libraries ambience.core ambience.matching ambience.trust unix threads uri yojson lwt)
+ (preprocess (pps ppx_deriving_yojson)))

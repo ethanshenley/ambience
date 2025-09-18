@@ -1,0 +1,6 @@
+(library
+ (name ambience_trust)
+ (public_name ambience.trust)
+ (modules capability collateral reputation)
+ (libraries ambience.core unix)
+ (preprocess (pps ppx_deriving_yojson)))
