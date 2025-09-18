@@ -89,7 +89,7 @@ let create () = {
   total_matches_found = 0;
   total_settlements_completed = 0;
   total_volume_transacted = 0.0;
-  last_checkpoint = Unix.time ();
+  last_checkpoint = Time_provider.now ();
   state_version = 0;
 }
 
@@ -102,8 +102,8 @@ module Transitions = struct
     else begin
       let info = {
         public_key = agent_id;
-        joined_at = Unix.time ();
-        last_seen = Unix.time ();
+        joined_at = Time_provider.now ();
+        last_seen = Time_provider.now ();
         capabilities = capabilities;
         metadata = [];
       } in
@@ -117,7 +117,7 @@ module Transitions = struct
         successful_settlements = 0;
         failed_settlements = 0;
         total_volume = 0.0;
-        last_updated = Unix.time ();
+        last_updated = Time_provider.now ();
         domain_scores = None;
       } in
       Hashtbl.add state.reputations agent_id rep;
@@ -216,8 +216,8 @@ module Transitions = struct
             participants = participants;
             state = Proposing;
             proposals = [];
-            started_at = Unix.time ();
-            last_activity = Unix.time ();
+            started_at = Time_provider.now ();
+            last_activity = Time_provider.now ();
           } in
           
           Hashtbl.add state.negotiations match_id negotiation;
@@ -282,14 +282,14 @@ module Transitions = struct
                             total_settlements = rep.total_settlements + 1;
                             total_volume = rep.total_volume +. settlement.executed_point.quantity;
                             score = min 1.0 (rep.score +. 0.01);  (* Increase reputation *)
-                            last_updated = Unix.time ();
+                            last_updated = Time_provider.now ();
                           }
                       | Failed _ ->
                           { rep with
                             failed_settlements = rep.failed_settlements + 1;
                             total_settlements = rep.total_settlements + 1;
                             score = max 0.0 (rep.score -. 0.02);  (* Decrease reputation *)
-                            last_updated = Unix.time ();
+                            last_updated = Time_provider.now ();
                           }
                       | _ -> rep
                     in
@@ -324,7 +324,7 @@ end
 module Queries = struct
   (** Get all active intents *)
   let get_active_intents state =
-    let current_time = Unix.time () in
+    let current_time = Time_provider.now () in
     Hashtbl.fold (fun _id intent acc ->
       if Intent.is_valid intent current_time then
         intent :: acc
@@ -391,7 +391,7 @@ module Persistence = struct
     let oc = open_out filename in
     Yojson.Safe.to_channel oc json;
     close_out oc;
-    state.last_checkpoint <- Unix.time ()
+    state.last_checkpoint <- Time_provider.now ()
   
   (** Load state from file *)
   let load_checkpoint filename =

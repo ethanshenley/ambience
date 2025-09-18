@@ -155,7 +155,7 @@ let initialize_reputation manager agent_id ?(verification = Unverified) () =
       value = 0.5;
       confidence = 0.0;  (* No confidence initially *)
       samples = 0;
-      last_updated = Unix.time ();
+      last_updated = Ambience_core.Time_provider.now ();
     }
   ) [Reliability; Timeliness; VolumeHandling; 
      DisputeResolution; PriceDiscovery; Liquidity];
@@ -173,8 +173,8 @@ let initialize_reputation manager agent_id ?(verification = Unverified) () =
     total_volume = 0.0;
     disputes_raised = 0;
     disputes_won = 0;
-    created_at = Unix.time ();
-    last_active = Unix.time ();
+    created_at = Ambience_core.Time_provider.now ();
+    last_active = Ambience_core.Time_provider.now ();
     verification_level = verification;
   } in
   
@@ -203,7 +203,7 @@ let update_dimension_score old_score success =
     value = new_value;
     confidence = confidence;
     samples = samples;
-    last_updated = Unix.time ();
+    last_updated = Ambience_core.Time_provider.now ();
   }
 
 (** Calculate overall score from dimensions *)
@@ -228,7 +228,7 @@ let calculate_overall_score manager reputation =
 
 (** Apply time decay to scores *)
 let apply_decay manager reputation =
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   
   Hashtbl.iter (fun dim score ->
     let age = current_time -. score.last_updated in
@@ -260,7 +260,7 @@ let rec record_interaction manager agent_id counterparty interaction_type
         interaction_type = interaction_type;
         outcome = outcome;
         value = value;
-        timestamp = Unix.time ();
+        timestamp = Ambience_core.Time_provider.now ();
         impact = 0.0;  (* Will be calculated *)
       } in
       
@@ -294,7 +294,7 @@ let rec record_interaction manager agent_id counterparty interaction_type
       (* Update statistics *)
       reputation.total_transactions <- reputation.total_transactions + 1;
       reputation.total_volume <- reputation.total_volume +. value;
-      reputation.last_active <- Unix.time ();
+      reputation.last_active <- Ambience_core.Time_provider.now ();
       
       (* Calculate impact *)
       let impact = value /. (reputation.total_volume +. 1.0) in

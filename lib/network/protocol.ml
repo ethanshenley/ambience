@@ -258,7 +258,7 @@ let create_hello sender (info : agent_info) =
     msg_id = Intent.generate_uuid ();
     msg_type = (Hello : msg_type);
     sender = sender;
-    timestamp = Unix.time ();
+    timestamp = Ambience_core.Time_provider.now ();
     payload = Hello {
       version = protocol_version;
       capabilities = info.capabilities;
@@ -273,7 +273,7 @@ let create_intent_msg sender intent =
     msg_id = Intent.generate_uuid ();
     msg_type = IntentMsg;
     sender = sender;
-    timestamp = Unix.time ();
+    timestamp = Ambience_core.Time_provider.now ();
     payload = Intent intent;
     signature = None;
   }
@@ -284,7 +284,7 @@ let create_match_msg sender match_t =
     msg_id = Intent.generate_uuid ();
     msg_type = MatchMsg;
     sender = sender;
-    timestamp = Unix.time ();
+    timestamp = Ambience_core.Time_provider.now ();
     payload = Match match_t;
     signature = None;
   }
@@ -295,7 +295,7 @@ let create_heartbeat sender seq load intents matches =
     msg_id = Intent.generate_uuid ();
     msg_type = HeartbeatMsg;
     sender = sender;
-    timestamp = Unix.time ();
+    timestamp = Ambience_core.Time_provider.now ();
     payload = Heartbeat {
       sequence = seq;
       load = load;
@@ -305,12 +305,37 @@ let create_heartbeat sender seq load intents matches =
     signature = None;
   }
 
+(** Create query message *)
+let create_query sender query_type filters limit = {
+  msg_id = Intent.generate_uuid ();
+  msg_type = QueryMsg;
+  sender = sender;
+  timestamp = Ambience_core.Time_provider.now ();
+  payload = Query {
+    query_id = Intent.generate_uuid ();
+    query_type = query_type;
+    filters = filters;
+    limit = limit;
+  };
+  signature = None;
+}
+
+(** Create goodbye message *)
+let create_goodbye sender reason = {
+  msg_id = Intent.generate_uuid ();
+  msg_type = GoodbyeMsg;
+  sender = sender;
+  timestamp = Ambience_core.Time_provider.now ();
+  payload = Goodbye reason;
+  signature = None;
+}
+
 (** {2 Message Validation} *)
 
 (** Validate message *)
 let validate_message msg =
   (* Check timestamp is reasonable (not too old or future) *)
-  let current = Unix.time () in
+  let current = Ambience_core.Time_provider.now () in
   let age = abs_float (current -. msg.timestamp) in
   
   if age > 3600.0 then  (* More than 1 hour *)
@@ -429,12 +454,12 @@ module RateLimit = struct
     max_bytes_per_second = max_bytes;
     message_count = 0.0;
     byte_count = 0;
-    last_reset = Unix.time ();
+    last_reset = Ambience_core.Time_provider.now ();
   }
   
   (** Check if message is allowed *)
   let check_message limiter size =
-    let current = Unix.time () in
+    let current = Ambience_core.Time_provider.now () in
     let elapsed = current -. limiter.last_reset in
     
     (* Reset if second has passed *)

@@ -167,7 +167,7 @@ let calculate_utility intent point weights =
   
   let time_utility =
     let time = get_coord "time" in
-    let current = Unix.time () in
+    let current = Ambience_core.Time_provider.now () in
     let delay = max 0.0 (time -. current) in
     exp (-. delay /. 3600.0)  (* Exponential decay - 1hr half-life *)
   in

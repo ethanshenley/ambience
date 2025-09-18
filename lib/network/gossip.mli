@@ -25,7 +25,7 @@ val default_config : config
 type gossip_engine
 type gossip_message
 
-val create_engine : peer_manager -> ?config:config -> unit -> gossip_engine
+val create_engine : peer_manager -> public_key -> ?config:config -> unit -> gossip_engine
 
 (** {1 Message Operations} *)
 

@@ -120,7 +120,7 @@ let issue_certificate manager ~issuer ~subject ~capabilities
     Error "Issuer not authorized to issue certificates"
   else
     let cert_id = Intent.generate_uuid () in
-    let current_time = Unix.time () in
+    let current_time = Ambience_core.Time_provider.now () in
     
     (* Calculate delegation depth *)
     let delegation_depth = 
@@ -201,7 +201,7 @@ let rec verify_chain manager cert =
     false
   else
     (* Check expiry *)
-    let current_time = Unix.time () in
+    let current_time = Ambience_core.Time_provider.now () in
     match cert.expires_at with
     | Some expiry when expiry < current_time -> false
     | _ ->
@@ -296,7 +296,7 @@ let rec revoke_certificate manager cert_id revoker reason =
           revoked = true;
           metadata = ("revoked_by", revoker) :: 
                     ("revoked_reason", reason) ::
-                    ("revoked_at", string_of_float (Unix.time ())) ::
+                    ("revoked_at", string_of_float (Ambience_core.Time_provider.now ())) ::
                     cert.metadata
         } in
         

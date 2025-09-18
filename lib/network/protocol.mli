@@ -25,6 +25,12 @@ type msg_type =
 
 type protocol_message
 
+type query_type =
+  | QueryIntents
+  | QueryMatches
+  | QuerySettlements
+  | QueryAgents
+
 type agent_info = {
   agent_id: public_key;
   name: string option;
@@ -39,6 +45,8 @@ val create_hello : public_key -> agent_info -> protocol_message
 val create_intent_msg : public_key -> intent -> protocol_message
 val create_match_msg : public_key -> match_t -> protocol_message
 val create_heartbeat : public_key -> int -> float -> int -> int -> protocol_message
+val create_query : public_key -> query_type -> (string * string) list -> int option -> protocol_message
+val create_goodbye : public_key -> string -> protocol_message
 
 (** {1 Serialization} *)
 

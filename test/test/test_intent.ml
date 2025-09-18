@@ -233,24 +233,23 @@ let test_get_counterparty_requirements () =
   check int "Requirements count" 1 (List.length reqs)
 
 let test_get_stats () =
-  (* Use real time for this test since Intent module uses Unix.time() *)
-  let current = Unix.time () in
-  let intent = make_test_intent
-    ~lifecycle:(Expiring (current +. 3600.0))
-    ~created_at:(Some (current -. 600.0))
-    () in
+  (* Use mock time for deterministic testing *)
+  Time_provider.Test.with_mock_time 1000.0 (fun () ->
+    let intent = make_test_intent
+      ~lifecycle:(Expiring 4600.0)  (* Expires at t=4600 *)
+      ~created_at:(Some 400.0)      (* Created at t=400 *)
+      () in
 
-  let stats = Intent.get_stats intent in
-  (* Check age is approximately 600 seconds (allow small variance) *)
-  check bool "Age approximately 600s" true
-    (abs_float (stats.age -. 600.0) < 1.0);
+    let stats = Intent.get_stats intent in
+    (* Check age is exactly 600 seconds (1000 - 400) *)
+    check (float 0.01) "Age" 600.0 stats.age;
 
-  match stats.time_remaining with
-  | Some remaining ->
-      (* Check time remaining is approximately 3600 seconds *)
-      check bool "Time remaining approximately 3600s" true
-        (abs_float (remaining -. 3600.0) < 1.0)
-  | None -> fail "Expected time remaining"
+    match stats.time_remaining with
+    | Some remaining ->
+        (* Check time remaining is exactly 3600 seconds (4600 - 1000) *)
+        check (float 0.01) "Time remaining" 3600.0 remaining
+    | None -> fail "Expected time remaining"
+  )
 
 (** Test UUID generation *)
 let test_generate_uuid () =

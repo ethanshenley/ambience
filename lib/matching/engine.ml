@@ -99,7 +99,7 @@ let compute_time_window intent_a intent_b =
   let windows_a = get_time_windows intent_a in
   let windows_b = get_time_windows intent_b in
   
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   
   match windows_a, windows_b with
   | [], [] -> 
@@ -169,7 +169,7 @@ let calculate_utility intent point =
   
   (* Time utility - sooner is generally better *)
   let time_utility =
-    let current = Unix.time () in
+    let current = Ambience_core.Time_provider.now () in
     let delay = point.execution_time -. current in
     let max_delay = 86400.0 in  (* 24 hours *)
     max 0.0 (1.0 -. (delay /. max_delay))
@@ -288,9 +288,9 @@ let discover_bilateral_matches config intents =
                 match_id = generate_uuid ();
                 intent_ids = [intent_a.intent_id; intent_b.intent_id];
                 settlement_space = manifold;
-                discovered_at = Unix.time ();
+                discovered_at = Ambience_core.Time_provider.now ();
                 discovered_by = "matching_engine";
-                expires_at = Unix.time () +. 300.0;  (* 5 minute expiry *)
+                expires_at = Ambience_core.Time_provider.now () +. 300.0;  (* 5 minute expiry *)
               } in
               matches := match_t :: !matches
     ) pairs
@@ -306,7 +306,7 @@ let discover_multilateral_matches _config _intents =
 
 (** Run one matching round *)
 let run_matching_round engine =
-  let start_time = Unix.time () in
+  let start_time = Ambience_core.Time_provider.now () in
   
   (* Get active intents *)
   let intents = 
@@ -338,7 +338,7 @@ let run_matching_round engine =
   ) all_matches;
   
   (* Update statistics *)
-  let elapsed = Unix.time () -. start_time in
+  let elapsed = Ambience_core.Time_provider.now () -. start_time in
   engine.total_time_spent <- engine.total_time_spent +. elapsed;
   engine.rounds_completed <- engine.rounds_completed + 1;
   
@@ -430,7 +430,7 @@ let rank_matches matches =
     
     let urgency_score =
       (* Matches expiring soon get higher priority *)
-      let time_until_expiry = match_t.expires_at -. Unix.time () in
+      let time_until_expiry = match_t.expires_at -. Ambience_core.Time_provider.now () in
       let max_expiry = 300.0 in  (* 5 minutes *)
       1.0 -. (time_until_expiry /. max_expiry)
     in

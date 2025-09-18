@@ -1,6 +1,6 @@
 (** Ambient Commerce Protocol - Main Entry Point *)
 
-open Ambient_core.Types
+open Ambience_core.Types
 
 (** {1 Configuration} *)
 

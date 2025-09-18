@@ -13,12 +13,12 @@
 open Types
 
 (** Generate a new UUID. In production, use a proper UUID library. *)
-let generate_uuid () = 
+let generate_uuid () =
   (* For now, using timestamp + random for uniqueness *)
-  Printf.sprintf "%f-%d" (Unix.time ()) (Random.int 1000000)
+  Printf.sprintf "%f-%d" (Time_provider.now ()) (Random.int 1000000)
 
-(** Get current timestamp *)
-let now () = Unix.time ()
+(** Get current timestamp - delegates to time provider for testability *)
+let now () = Time_provider.now ()
 
 (** Calculate the cryptographic commitment for an intent.
     This ensures the intent cannot be modified after creation. *)

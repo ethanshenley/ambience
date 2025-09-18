@@ -98,7 +98,7 @@ let create_node config =
   
   (* Initialize network *)
   let peer_manager = Peer.create_manager config.node_id ~max_peers:config.max_peers () in
-  let gossip_engine = Gossip.create_engine peer_manager () in
+  let gossip_engine = Gossip.create_engine peer_manager config.node_id () in
   
   (* Initialize settlement *)
   let escrow_manager = Escrow.create_manager () in
@@ -135,7 +135,7 @@ let create_node config =
     collateral_manager = collateral_manager;
     reputation_manager = reputation_manager;
     running = false;
-    start_time = Unix.time ();
+    start_time = Ambience_core.Time_provider.now ();
   }
 
 (** {2 High-Level Operations} *)
@@ -175,23 +175,24 @@ let post_intent node ~offers ~wants ?(constraints = []) ?(lifecycle = None) () =
 (** Execute a discovered match *)
 let execute_match node match_t =
   (* Check if we're involved *)
-  let our_intents = 
+  let our_intents : Types.intent list =
     match_t.Types.intent_ids
     |> List.filter_map (fun id ->
         State.Queries.get_active_intents node.state
-        |> List.find_opt (fun i -> i.Types.intent_id = id))
-    |> List.filter (fun i -> i.Types.agent_id = node.config.node_id)
+        |> List.find_opt (fun (i : Types.intent) -> i.Types.intent_id = id))
+    |> List.filter (fun (i : Types.intent) -> i.Types.agent_id = node.config.node_id)
   in
   
   if List.length our_intents = 0 then
     Error "Not a participant in this match"
   else
     (* Check collateral *)
-    let required_collateral = 
-      Collateral.calculate_required node.collateral_manager 
-        match_t.settlement_space.pareto_frontier.(0).quantity
+    let reputation = Reputation.get_reputation node.reputation_manager node.config.node_id in
+    let required_collateral =
+      Collateral.calculate_required node.collateral_manager
+        (List.hd match_t.settlement_space.pareto_frontier).quantity
         reputation
-        node.collateral_manager.default_collateral_type
+        (Collateral.Percentage 0.1)
     in
     
     if not (Collateral.has_sufficient_collateral node.collateral_manager 
@@ -206,9 +207,9 @@ let execute_match node match_t =
         execution_proof = "";
         pre_state_hash = "";
         post_state_hash = "";
-        reversible_until = Some (Unix.time () +. node.config.reversal_window);
+        reversible_until = Some (Ambience_core.Time_provider.now () +. node.config.reversal_window);
         status = Types.Pending;
-        executed_at = Unix.time ();
+        executed_at = Ambience_core.Time_provider.now ();
       } in
       
       (* Execute through executor *)
@@ -240,7 +241,7 @@ let get_node_stats node =
   
   `Assoc [
     "node_id", `String node.config.node_id;
-    "uptime", `Float (Unix.time () -. node.start_time);
+    "uptime", `Float (Ambience_core.Time_provider.now () -. node.start_time);
     "state", `Assoc [
       "total_intents", `Int state_stats.total_intents_posted;
       "active_intents", `Int state_stats.active_intents;
@@ -324,14 +325,18 @@ module Advanced = struct
         let buy_prices = 
           intents
           |> List.filter (fun i -> i.Types.want_field.resource_type = resource_type)
-          |> List.filter_map (fun i -> Intent.get_price_ranges i |> List.nth_opt 0)
+          |> List.filter_map (fun i ->
+                let ranges = Intent.get_price_ranges i in
+                if List.length ranges > 0 then Some (List.nth ranges 0) else None)
           |> List.map fst
         in
         
         let sell_prices =
           intents
           |> List.filter (fun i -> i.Types.offer_field.resource_type = resource_type)
-          |> List.filter_map (fun i -> Intent.get_price_ranges i |> List.nth_opt 0)
+          |> List.filter_map (fun i ->
+                let ranges = Intent.get_price_ranges i in
+                if List.length ranges > 0 then Some (List.nth ranges 0) else None)
           |> List.map snd
         in
         

@@ -13,6 +13,10 @@
 open Ambience_core.Types
 open Transport
 open Protocol
+module Intent = Ambience_core.Intent
+
+(** Import capability type from trust module *)
+type capability = Ambience_trust.Capability.capability
 
 (** Peer information *)
 type peer_info = {
@@ -109,8 +113,8 @@ module Discovery = struct
       let peer_info = {
         peer_id = peer_id;
         endpoints = [endpoint];
-        first_seen = Unix.time ();
-        last_seen = Unix.time ();
+        first_seen = Ambience_core.Time_provider.now ();
+        last_seen = Ambience_core.Time_provider.now ();
         reputation_score = 0.5;  (* Neutral *)
         capabilities = [];
         metadata = [];
@@ -153,8 +157,8 @@ module Discovery = struct
         let peer_info = {
           peer_id = peer_id;
           endpoints = endpoints;
-          first_seen = Unix.time ();
-          last_seen = Unix.time ();
+          first_seen = Ambience_core.Time_provider.now ();
+          last_seen = Ambience_core.Time_provider.now ();
           reputation_score = 0.3;  (* Lower initial trust *)
           capabilities = [];
           metadata = [];
@@ -168,7 +172,7 @@ end
 (** {2 Connection Management} *)
 
 (** Connect to peer *)
-let connect_to_peer manager peer_id =
+let rec connect_to_peer manager peer_id =
   match Hashtbl.find_opt manager.peers peer_id with
   | None -> Error "Peer not found"
   | Some peer_info ->
@@ -203,7 +207,7 @@ let connect_to_peer manager peer_id =
                          let updated_peer = {
                            peer_info with
                            connection_state = Connected conn;
-                           last_seen = Unix.time ();
+                           last_seen = Ambience_core.Time_provider.now ();
                          } in
                          Hashtbl.replace manager.peers peer_id updated_peer;
                          Hashtbl.replace manager.connections peer_id conn;
@@ -240,7 +244,7 @@ and handle_peer_message manager peer_id data =
            let updated_peer = {
              peer with
              statistics = updated_stats;
-             last_seen = Unix.time ();
+             last_seen = Ambience_core.Time_provider.now ();
            } in
            Hashtbl.replace manager.peers peer_id updated_peer);
       
@@ -255,14 +259,7 @@ let disconnect_from_peer manager peer_id =
       (match peer_info.connection_state with
        | Connected conn ->
            (* Send goodbye *)
-           let goodbye = {
-             msg_id = Intent.generate_uuid ();
-             msg_type = GoodbyeMsg;
-             sender = manager.my_id;
-             timestamp = Unix.time ();
-             payload = Goodbye "Disconnecting";
-             signature = None;
-           } in
+           let goodbye = Protocol.create_goodbye manager.my_id "Disconnecting" in
            let data = Serialization.to_binary goodbye in
            let _ = Transport.send conn data in
            
@@ -405,7 +402,7 @@ end
 
 (** Maintain peer connections *)
 let maintain_connections manager =
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   
   (* Check for dead peers *)
   Hashtbl.iter (fun peer_id peer ->
@@ -440,6 +437,12 @@ let maintain_connections manager =
     ) (List.filteri (fun i _ -> 
         i < (manager.min_peers - connected_count)
       ) unconnected)
+
+(** Send data to a specific peer *)
+let send_to_peer manager peer_id data =
+  match Hashtbl.find_opt manager.connections peer_id with
+  | None -> Error "Peer not connected"
+  | Some conn -> Transport.send conn data
 
 (** Get manager statistics *)
 type manager_stats = {

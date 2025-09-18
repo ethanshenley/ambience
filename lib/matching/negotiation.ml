@@ -74,7 +74,7 @@ let create_session match_id participants manifold protocol
     protocol = protocol;
     state = Proposing;
     history = [];
-    started_at = Unix.time ();
+    started_at = Ambience_core.Time_provider.now ();
     deadline = deadline;
     max_rounds = max_rounds;
     current_round = 0;
@@ -199,7 +199,7 @@ let generate_counter_offer participant opponent_offer manifold session =
         match session.deadline with
         | None -> 0.1
         | Some deadline ->
-            let remaining = deadline -. Unix.time () in
+            let remaining = deadline -. Ambience_core.Time_provider.now () in
             let total = deadline -. session.started_at in
             1.0 -. (remaining /. total)
       in
@@ -264,7 +264,7 @@ let alternating_offers_round session : negotiation_state =
               point = point;
               utility_for_proposer = u_proposer;
               utility_for_receiver = u_receiver;
-              timestamp = Unix.time ();
+              timestamp = Ambience_core.Time_provider.now ();
             } in
             
             proposer.last_offer <- Some point;
@@ -321,7 +321,7 @@ let execute_round session =
   let deadline_passed = 
     match session.deadline with
     | None -> false
-    | Some d -> Unix.time () > d
+    | Some d -> Ambience_core.Time_provider.now () > d
   in
   
   if deadline_passed then
@@ -371,7 +371,7 @@ let analyze_outcome session =
     | _ -> (false, None)
   in
   
-  let time_taken = Unix.time () -. session.started_at in
+  let time_taken = Ambience_core.Time_provider.now () -. session.started_at in
   
   let total_concession = 
     List.fold_left (fun acc p -> acc +. p.concession_rate) 0.0 

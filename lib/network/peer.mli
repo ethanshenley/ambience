@@ -81,6 +81,9 @@ type selection_strategy =
 
 val select_peers : peer_manager -> selection_strategy -> int -> public_key list
 
+(** Send data to a peer *)
+val send_to_peer : peer_manager -> public_key -> bytes -> (unit, string) result
+
 (** {1 Reputation} *)
 
 module Reputation : sig

@@ -116,7 +116,7 @@ let create_manager proof_generator ?(reversal_window = 3600.0)
 
 (** Check if settlement can be reversed *)
 let can_reverse manager settlement =
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   let age = current_time -. settlement.executed_at in
   
   (* Check if within reversal window *)
@@ -141,7 +141,7 @@ let initiate_reversal manager settlement_id initiated_by reason
   
   (* Generate reversal ID *)
   let reversal_id = Intent.generate_uuid () in
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   
   (* Create reversal record *)
   let reversal = {
@@ -288,7 +288,7 @@ let execute_reversal manager reversal_id =
               post_state_hash = "";
               reversible_until = None;
               status = Reversed "Reversal executed";
-              executed_at = Unix.time (); }
+              executed_at = Ambience_core.Time_provider.now (); }
             [(reversal.initiated_by, "Reversal executed")]
         in
         
@@ -296,7 +296,7 @@ let execute_reversal manager reversal_id =
         let completed = {
           reversal with
           status = Completed;
-          completed_at = Some (Unix.time ());
+          completed_at = Some (Ambience_core.Time_provider.now ());
           reversed_transfers = reversed_transfers;
           reversal_proof = Some proof;
         } in
@@ -353,7 +353,7 @@ let get_settlement_reversals manager settlement_id =
 
 (** Check for expired reversals *)
 let check_deadlines manager =
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   
   Hashtbl.iter (fun reversal_id reversal ->
     if reversal.status = Initiated || reversal.status = Approved then

@@ -237,4 +237,4 @@ let create_uuid () =
     (random_hex 8) (random_hex 4) (random_hex 4)
     (random_hex 4) (random_hex 12)
 
-let current_timestamp () = Unix.gettimeofday ()
+let current_timestamp () = Time_provider.now ()

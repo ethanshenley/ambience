@@ -203,7 +203,7 @@ let generate_state_proof generator pre_settlement post_settlement =
     merkle_proof = None;
     signatures = [];
     witnesses = [];
-    generated_at = Unix.time ();
+    generated_at = Ambience_core.Time_provider.now ();
     generator = "system";
     verified = false;
   } in
@@ -220,7 +220,7 @@ let sign_data signer data =
   {
     signer = signer;
     signature_data = hash data;  (* Would use private key *)
-    signed_at = Unix.time ();
+    signed_at = Ambience_core.Time_provider.now ();
   }
 
 (** Verify signature *)
@@ -245,7 +245,7 @@ let generate_signature_proof generator settlement signers =
     merkle_proof = None;
     signatures = signatures;
     witnesses = [];
-    generated_at = Unix.time ();
+    generated_at = Ambience_core.Time_provider.now ();
     generator = "system";
     verified = false;
   } in
@@ -263,7 +263,7 @@ let create_witness witness_id attestation ?(data = None) () =
     witness_id = witness_id;
     attestation = attestation;
     data = data;
-    witnessed_at = Unix.time ();
+    witnessed_at = Ambience_core.Time_provider.now ();
   }
 
 (** Generate witness proof *)
@@ -283,7 +283,7 @@ let generate_witness_proof generator (settlement : settlement) witnesses_info =
     merkle_proof = None;
     signatures = [];
     witnesses = witnesses;
-    generated_at = Unix.time ();
+    generated_at = Ambience_core.Time_provider.now ();
     generator = "system";
     verified = false;
   } in
@@ -322,7 +322,7 @@ let aggregate_proofs generator proofs =
     merkle_proof = None;
     signatures = all_signatures;
     witnesses = all_witnesses;
-    generated_at = Unix.time ();
+    generated_at = Ambience_core.Time_provider.now ();
     generator = "system";
     verified = false;
   } in

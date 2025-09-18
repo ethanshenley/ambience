@@ -120,7 +120,7 @@ let create_escrow manager ~match_id ~depositor ~beneficiary
     ?(timeout = 3600.0) ?(arbitrator = None) () =
   
   let escrow_id = Intent.generate_uuid () in
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   
   (* Calculate expected resources *)
   let expected = 
@@ -172,7 +172,7 @@ let lock_resources manager escrow_id agent_id resources =
       if escrow.state <> Created && escrow.state <> Funded then
         Error "Escrow not in correct state for funding"
       else
-        let current_time = Unix.time () in
+        let current_time = Ambience_core.Time_provider.now () in
         
         (* Create resource locks *)
         let locks = 
@@ -238,7 +238,7 @@ let lock_escrow manager escrow_id settlement_id =
           escrow with
           state = Locked;
           settlement_id = Some settlement_id;
-          account_locked_at = Some (Unix.time ());
+          account_locked_at = Some (Ambience_core.Time_provider.now ());
         } in
         
         Hashtbl.replace manager.escrows escrow_id updated_escrow;
@@ -256,7 +256,7 @@ let release_escrow manager escrow_id =
         let can_release = 
           match escrow.escrow_type with
           | Simple -> true
-          | TimeLocked deadline -> Unix.time () >= deadline
+          | TimeLocked deadline -> Ambience_core.Time_provider.now () >= deadline
           | MultiSig (required, signers) ->
               (* TODO: Check signatures *)
               List.length signers >= required
@@ -273,7 +273,7 @@ let release_escrow manager escrow_id =
           let updated_escrow = {
             escrow with
             state = Released;
-            released_at = Some (Unix.time ());
+            released_at = Some (Ambience_core.Time_provider.now ());
           } in
           
           Hashtbl.replace manager.escrows escrow_id updated_escrow;
@@ -334,7 +334,7 @@ let raise_dispute manager escrow_id disputing_party reason =
           metadata = [
             ("dispute_raised_by", disputing_party);
             ("dispute_reason", reason);
-            ("dispute_raised_at", string_of_float (Unix.time ()));
+            ("dispute_raised_at", string_of_float (Ambience_core.Time_provider.now ()));
           ] @ escrow.metadata;
         } in
         
@@ -361,7 +361,7 @@ let resolve_dispute manager escrow_id resolution =
             let updated_escrow = {
               escrow with
               state = Released;
-              released_at = Some (Unix.time ());
+              released_at = Some (Ambience_core.Time_provider.now ());
               metadata = ("split_ratio", string_of_float ratio) :: escrow.metadata;
             } in
             
@@ -394,7 +394,7 @@ let lock_collateral manager escrow_id agent_id collateral_amount =
         amount_locked = collateral_amount;
         lock_id = Intent.generate_uuid ();
         locked_from = agent_id;
-        lock_timestamp = Unix.time ();
+        lock_timestamp = Ambience_core.Time_provider.now ();
         unlock_condition = OnSettlement;
       } in
       
@@ -432,7 +432,7 @@ let release_collateral manager escrow_id =
 
 (** Check for expired escrows *)
 let check_expirations manager =
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   
   Hashtbl.iter (fun escrow_id escrow ->
     if escrow.state = Created || escrow.state = Funded then

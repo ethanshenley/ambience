@@ -13,7 +13,8 @@
 
 open Ambience_core.Types
 open Protocol
-open Peer
+module Peer = Peer
+module Intent = Ambience_core.Intent
 
 (** Gossip message *)
 type gossip_message = {
@@ -49,7 +50,9 @@ let default_config = {
 (** Gossip engine *)
 type gossip_engine = {
   config: config;
-  peer_manager: peer_manager;
+  peer_manager: Peer.peer_manager;
+  my_id: public_key;
+  router: Protocol.router;  (* Add router field *)
   seen_messages: (uuid, timestamp) Hashtbl.t;
   message_cache: (uuid, gossip_message) Hashtbl.t;
   mutable running: bool;
@@ -59,9 +62,11 @@ type gossip_engine = {
 }
 
 (** Create gossip engine *)
-let create_engine peer_manager ?(config = default_config) () = {
+let create_engine (peer_manager : Peer.peer_manager) my_id ?(config = default_config) () = {
   config = config;
   peer_manager = peer_manager;
+  my_id = my_id;
+  router = Protocol.create_router ();
   seen_messages = Hashtbl.create config.cache_size;
   message_cache = Hashtbl.create config.cache_size;
   running = false;
@@ -78,11 +83,11 @@ let is_duplicate engine msg_id =
 
 (** Mark message as seen *)
 let mark_seen engine msg_id =
-  Hashtbl.replace engine.seen_messages msg_id (Unix.time ())
+  Hashtbl.replace engine.seen_messages msg_id (Ambience_core.Time_provider.now ())
 
 (** Clean old messages from cache *)
 let clean_cache engine =
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   let old_threshold = current_time -. engine.config.cache_ttl in
   
   (* Remove old seen messages *)
@@ -117,26 +122,23 @@ let push_gossip engine gossip_msg =
     ()
   end else begin
     (* Select peers to forward to *)
-    let peers = select_peers engine.peer_manager Balanced engine.config.fanout in
+    let peers = Peer.select_peers engine.peer_manager Peer.Balanced engine.config.fanout in
     
     (* Update message for forwarding *)
     let forwarded_msg = {
       gossip_msg with
       hop_count = gossip_msg.hop_count + 1;
-      seen_by = engine.peer_manager.my_id :: gossip_msg.seen_by;
+      seen_by = engine.my_id :: gossip_msg.seen_by;
     } in
     
     (* Send to selected peers *)
     List.iter (fun peer_id ->
       if not (List.mem peer_id forwarded_msg.seen_by) then
-        match Hashtbl.find_opt engine.peer_manager.connections peer_id with
-        | None -> ()
-        | Some conn ->
-            let data = Serialization.to_binary forwarded_msg.content in
-            (match Transport.send conn data with
-             | Ok () -> 
-                 engine.messages_sent <- engine.messages_sent + 1
-             | Error _ -> ())
+        let data = Serialization.to_binary forwarded_msg.content in
+        (match Peer.send_to_peer engine.peer_manager peer_id data with
+         | Ok () ->
+             engine.messages_sent <- engine.messages_sent + 1
+         | Error _ -> ())
     ) peers
   end
 
@@ -144,12 +146,12 @@ let push_gossip engine gossip_msg =
 let broadcast engine content =
   let gossip_msg = {
     content = content;
-    message_id = content.msg_id;
-    origin = engine.peer_manager.my_id;
+    message_id = Intent.generate_uuid ();
+    origin = engine.my_id;
     hop_count = 0;
     max_hops = engine.config.max_hops;
-    timestamp = Unix.time ();
-    seen_by = [engine.peer_manager.my_id];
+    timestamp = Ambience_core.Time_provider.now ();
+    seen_by = [engine.my_id];
   } in
   
   (* Mark as seen *)
@@ -172,33 +174,18 @@ let pull_gossip engine =
   in
   
   (* Select random peer *)
-  let peers = select_peers engine.peer_manager Random 1 in
+  let peers = Peer.select_peers engine.peer_manager Peer.Random 1 in
   
   match peers with
   | [] -> ()
   | peer_id :: _ ->
       (* Create pull request *)
-      let query = {
-        msg_id = Intent.generate_uuid ();
-        msg_type = QueryMsg;
-        sender = engine.peer_manager.my_id;
-        timestamp = Unix.time ();
-        payload = Query {
-          query_id = Intent.generate_uuid ();
-          query_type = QueryIntents;  (* Simplified *)
-          filters = [];
-          limit = Some 100;
-        };
-        signature = None;
-      } in
+      let query = Protocol.create_query engine.my_id Protocol.QueryIntents [] (Some 100) in
       
       (* Send to peer *)
-      (match Hashtbl.find_opt engine.peer_manager.connections peer_id with
-       | None -> ()
-       | Some conn ->
-           let data = Serialization.to_binary query in
-           let _ = Transport.send conn data in
-           ())
+      let data = Serialization.to_binary query in
+      let _ = Peer.send_to_peer engine.peer_manager peer_id data in
+      ()
 
 (** Handle pull request *)
 let handle_pull_request engine peer_id request_msg =
@@ -214,12 +201,11 @@ let handle_pull_request engine peer_id request_msg =
   
   (* Send messages to peer *)
   List.iter (fun msg ->
-    match Hashtbl.find_opt engine.peer_manager.connections peer_id with
-    | None -> ()
-    | Some conn ->
-        let data = Serialization.to_binary msg.content in
-        let _ = Transport.send conn data in
-        engine.messages_sent <- engine.messages_sent + 1
+    let data = Serialization.to_binary msg.content in
+    (match Peer.send_to_peer engine.peer_manager peer_id data with
+     | Ok () ->
+         engine.messages_sent <- engine.messages_sent + 1
+     | Error _ -> ())
   ) (List.filteri (fun i _ -> i < 10) our_messages)  (* Limit to 10 *)
 
 (** {2 Message Reception} *)
@@ -239,7 +225,7 @@ let handle_received engine gossip_msg =
     Hashtbl.replace engine.message_cache gossip_msg.message_id gossip_msg;
     
     (* Process the content *)
-    route_message engine.peer_manager.router gossip_msg.content;
+    Protocol.route_message engine.router gossip_msg.content;
     
     (* Forward via push gossip *)
     push_gossip engine gossip_msg
@@ -256,23 +242,23 @@ type strategy =
 
 (** Apply gossip strategy *)
 let apply_strategy engine strategy message =
-  let peers = 
+  let peers =
     match strategy with
     | Flood ->
         (* Get all connected peers *)
-        select_peers engine.peer_manager Random 1000
-    
+        Peer.select_peers engine.peer_manager Peer.Random 1000
+
     | Random ->
         (* Random subset *)
-        select_peers engine.peer_manager Random engine.config.fanout
-    
+        Peer.select_peers engine.peer_manager Peer.Random engine.config.fanout
+
     | Proximity ->
         (* Prefer low latency peers *)
-        select_peers engine.peer_manager LowestLatency engine.config.fanout
-    
+        Peer.select_peers engine.peer_manager Peer.LowestLatency engine.config.fanout
+
     | Gradient ->
         (* For directed gossip - e.g., towards peers interested in resource *)
-        select_peers engine.peer_manager MostActive engine.config.fanout
+        Peer.select_peers engine.peer_manager Peer.MostActive engine.config.fanout
   in
   
   (* Send to selected peers *)
@@ -366,7 +352,7 @@ module Advanced = struct
   
   (** T-Man - topology management *)
   type tman = {
-    ranking_function: peer_info -> peer_info -> int;
+    ranking_function: Peer.peer_info -> Peer.peer_info -> int;
     view_size: int;
   }
 end

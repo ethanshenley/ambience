@@ -318,7 +318,7 @@ let find_circular_paths _context intents max_length =
 
 (** Pre-filter intents before discovery *)
 let prefilter_intents intents =
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   
   intents
   |> List.filter (fun i -> Intent.is_valid i current_time)
@@ -351,7 +351,7 @@ type stats = {
 
 (** Run discovery with statistics *)
 let discover_with_stats context intents =
-  let start_time = Unix.time () in
+  let start_time = Ambience_core.Time_provider.now () in
   
   (* Reset cache stats *)
   context.cache_hits <- 0;
@@ -363,7 +363,7 @@ let discover_with_stats context intents =
   (* Discover pairs *)
   let pairs = discover_pairs context filtered in
   
-  let elapsed = Unix.time () -. start_time in
+  let elapsed = Ambience_core.Time_provider.now () -. start_time in
   
   let stats = {
     total_intents = List.length intents;

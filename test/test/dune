@@ -22,12 +22,13 @@
 
 (executable
  (name test_all)
- (modules test_all test_core_types test_intent)
+ (modules test_all test_core_types test_intent test_time_provider)
  (libraries
   ambience.core
   test_helpers
   fixtures
-  alcotest)
+  alcotest
+  unix)
  (flags (:standard -w -A))
  (preprocess (pps ppx_deriving_yojson)))
 

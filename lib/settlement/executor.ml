@@ -149,7 +149,7 @@ let create_context executor settlement match_t =
     participants = participants;
     transfers = transfers;
     status = Pending;
-    started_at = Unix.time ();
+    started_at = Ambience_core.Time_provider.now ();
     completed_at = None;
     logs = [];
   }
@@ -157,7 +157,7 @@ let create_context executor settlement match_t =
 (** Add log entry *)
 let add_log context level message ?(details = []) () =
   let log_entry = {
-    log_timestamp = Unix.time ();
+    log_timestamp = Ambience_core.Time_provider.now ();
     level = level;
     log_status = context.status;
     message = message;
@@ -201,7 +201,7 @@ let validate_resources context =
 (** Validate settlement conditions *)
 let validate_conditions context =
   (* Check time windows *)
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   let within_window = 
     current_time >= context.settlement.executed_point.execution_time -. 60.0 &&
     current_time <= context.settlement.executed_point.execution_time +. 60.0
@@ -366,7 +366,7 @@ let commit_settlement executor context =
            let updated_ctx = add_log ctx Info "Settlement committed" () in
            Ok { updated_ctx with
                 status = Committed;
-                completed_at = Some (Unix.time ()) })
+                completed_at = Some (Ambience_core.Time_provider.now ()) })
 
 (** {2 Rollback} *)
 
@@ -410,7 +410,7 @@ let rollback_settlement executor context reason =
   let updated_ctx = add_log ctx Error (Printf.sprintf "Settlement rolled back: %s" reason) () in
   { updated_ctx with
     status = RolledBack;
-    completed_at = Some (Unix.time ()) }
+    completed_at = Some (Ambience_core.Time_provider.now ()) }
 
 (** {2 Main Execution} *)
 

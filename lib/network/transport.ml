@@ -286,7 +286,7 @@ module UDP = struct
                };
                
                (* Track for ACK *)
-               Hashtbl.add impl.ack_map seq (Unix.time ());
+               Hashtbl.add impl.ack_map seq (Ambience_core.Time_provider.now ());
                
                Ok ()
              with Unix.Unix_error (err, _, _) ->
@@ -475,7 +475,7 @@ let connect connection =
        | Ok () ->
            connection.state <- Connected;
            connection.stats <- 
-             { connection.stats with connected_since = Some (Unix.time ()) };
+             { connection.stats with connected_since = Some (Ambience_core.Time_provider.now ()) };
            
            (* Start reader thread *)
            let thread = Thread.create (TCP.reader_loop connection) socket in
@@ -491,13 +491,13 @@ let connect connection =
       impl.udp_socket <- Some socket;
       connection.state <- Connected;
       connection.stats <- 
-        { connection.stats with connected_since = Some (Unix.time ()) };
+        { connection.stats with connected_since = Some (Ambience_core.Time_provider.now ()) };
       Ok ()
   
   | MemoryImpl _impl ->
       connection.state <- Connected;
       connection.stats <- 
-        { connection.stats with connected_since = Some (Unix.time ()) };
+        { connection.stats with connected_since = Some (Ambience_core.Time_provider.now ()) };
       Ok ()
   
   | _ ->

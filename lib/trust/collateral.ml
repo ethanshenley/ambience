@@ -202,7 +202,7 @@ let add_slashing_condition manager pool_id condition =
 (** Stake collateral *)
 let stake manager agent amount resource ?(pool_id = None) () =
   let stake_id = Intent.generate_uuid () in
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   
   let stake = {
     stake_id = stake_id;
@@ -273,7 +273,7 @@ let lock_stake manager stake_id settlement_id duration =
         let updated = {
           stake with
           locked = true;
-          locked_until = Some (Unix.time () +. duration);
+          locked_until = Some (Ambience_core.Time_provider.now () +. duration);
           locked_for = Some settlement_id;
         } in
         
@@ -307,7 +307,7 @@ let request_unstake manager agent stake_id =
           else
             let updated = {
               stake with
-              unstake_requested = Some (Unix.time ());
+              unstake_requested = Some (Ambience_core.Time_provider.now ());
             } in
             
             let updated_stakes = 
@@ -330,7 +330,7 @@ let complete_unstake manager agent stake_id =
           match stake.unstake_requested with
           | None -> Error "Unstake not requested"
           | Some requested_at ->
-              let current_time = Unix.time () in
+              let current_time = Ambience_core.Time_provider.now () in
               let elapsed = current_time -. requested_at in
               
               if elapsed < stake.unstake_delay then
@@ -375,7 +375,7 @@ let slash_stake manager stake_id amount reason slashed_by
         Error "No funds to slash"
       else
         let slashing_event = {
-          slash_timestamp = Unix.time ();
+          slash_timestamp = Ambience_core.Time_provider.now ();
           slash_amount = slash_amount;
           reason = reason;
           settlement_id = settlement_id;
@@ -442,7 +442,7 @@ let calculate_rewards manager agent =
   | None -> 0.0
   | Some stakes ->
       List.fold_left (fun acc stake ->
-        let current_time = Unix.time () in
+        let current_time = Ambience_core.Time_provider.now () in
         let staking_duration = current_time -. stake.staked_at in
         let years = staking_duration /. (365.0 *. 86400.0) in
         
@@ -485,7 +485,7 @@ let get_stats manager =
     ) manager.stakes_by_agent []
   in
   
-  let current_time = Unix.time () in
+  let current_time = Ambience_core.Time_provider.now () in
   let total_duration = 
     List.fold_left (fun acc stake ->
       acc +. (current_time -. stake.staked_at)
